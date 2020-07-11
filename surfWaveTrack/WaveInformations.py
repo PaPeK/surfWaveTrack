@@ -292,7 +292,7 @@ def regionpropBlob (outpath, vidID):
             if(blob %1000 == 0):
                 print('currently at blob ', blob, end='\r')
             dset = h5f.create_dataset('Blob_{}'.format(props.label),
-                                      data=labelprops.coords,
+                                      data=props.coords,
                                       chunks=True, compression='gzip',
                                       compression_opts=9)
             all_labels[blob] = props.label

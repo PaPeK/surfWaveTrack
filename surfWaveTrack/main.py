@@ -120,7 +120,7 @@ def veloTest(outpath, videoarray, win_size, dthresh, pool,
         d_blobProps = outpath / 'blob_details'
         f_blobDetails = list(d_blobProps.glob('BlobCoords_*{}*.hdf5'.format(vidID)))[0]
         with h5py.File( str(f_blobDetails) , 'r') as h5f:
-                all_labelid = np.array(h5f.get('labelList'), dtype=int)
+            all_labelid = np.array(h5f.get('labelList')).astype(int)
         print('calculating velocity')
         supervelocity = []
         f_h5 = h5py.File(str(f_blobDetails), 'r') # NOTE: Needs to be this way, NOT in "with xy as"-Style!!!!
