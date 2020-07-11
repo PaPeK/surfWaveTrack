@@ -116,24 +116,22 @@ def veloTest(outpath, videoarray, win_size, dthresh, pool,
     outpath = Path(outpath)
 
     for vidID in videoarray:
-        print('video ', vidID)
-        print('calculating labelids')
-        d_blobProps = outpath / 'temp_regionprop_blob'
-        f_blobLabels = list(d_blobProps.glob('BlobLabels_video_*{}*.hdf5'.format(vidID)))[0]
-        with h5py.File( str(f_blobLabels) , 'r') as h5f:
-                all_labelid = np.array(h5f.get('labels'), dtype=int)
+        print('video ', vidID, ': calculating labelids')
+        d_blobProps = outpath / 'blob_details'
+        f_blobDetails = list(d_blobProps.glob('BlobCoords_*{}*.hdf5'.format(vidID)))[0]
+        with h5py.File( str(f_blobDetails) , 'r') as h5f:
+                all_labelid = np.array(h5f.get('labelList'), dtype=int)
         print('calculating velocity')
         supervelocity = []
-        f_blobCoords = list(d_blobProps.glob('Blobcoords_video_*{}*.hdf5'.format(vidID)))[0]
-        regfile = h5py.File(str(f_blobCoords), 'r') # NOTE: Needs to be this way, NOT in "with xy as"-Style!!!!
-        for blob, blobname in enumerate(all_labelid):
-            print('Blob ' , blob, ' of ', len(all_labelid), end='\r')
-            blobCoords = np.array( regfile['Blob_{}'.format(blob)] )
+        f_h5 = h5py.File(str(f_blobDetails), 'r') # NOTE: Needs to be this way, NOT in "with xy as"-Style!!!!
+        for blobId in all_labelid:
+            print('Blob ' , blobId, ' of ', len(all_labelid), end='\r')
+            blobCoords = np.array( f_h5['Blob_{}'.format(blobId)] )
             all_velocity = fsd.GetFrontSpeed(str(outpath), blobCoords, pool,
                                              NoZeroVelocity=NoZeroVelocity,
                                              favoured_direction=favoured_direction)
             supervelocity.append(all_velocity)
-        regfile.close()
+        f_h5.close()
         ######################################################################################################
         print('saving velocity_data')
         string_favoured_direction = ''
@@ -147,27 +145,21 @@ def veloTest(outpath, videoarray, win_size, dthresh, pool,
             pickle.dump(supervelocity, pick, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-# TODO: some really long blobs do have nans as velocity.... why?
 def blobSummary(videoarray, outpath, meterperpixel, secondperframe, favoured_direction=None):
     '''
     creates ONE pandas dataframe containing characteristics of EVERY BLOB of ALL VIDEOS
     '''
     outpath = Path(outpath)
-    ###
-    # computation of: WAVE duration[s], area_covered[m^2], maxWavefrontArea[m^2]
-    ###
     for i_vid, vidID in enumerate(videoarray):
         print('Video: ', vidID)
-        # position data
-        blob_dsets = []
-        f_coordfile = (outpath / 'temp_regionprop_blob')
-        f_coordfile = list(f_coordfile.glob('Blobcoords_video_*{}*.hdf5'.format(vidID)))[0]
+        ###
+        # computation of: WAVE duration[s], area_covered[m^2], maxWavefrontArea[m^2]
+        ###
+        f_coordfile = (outpath / 'blob_details')
+        f_coordfile = list(f_coordfile.glob('BlobCoords_*{}*.hdf5'.format(vidID)))[0]
         with h5py.File(str(f_coordfile), 'r') as coordfile:
-            coordfile.visit(blob_dsets.append)
-            blobID = [int( blob_dset.split('Blob_')[-1] ) for blob_dset in blob_dsets]
-            blobID.sort()
-            # create
-            N_blob = len(blob_dsets)
+            blobID = np.array(coordfile.get('labelList'))
+            N_blob = len(blobID)
             d = {'vidID': N_blob * [vidID], 'blobID': blobID, 'duration[s]': N_blob * [0.],
                  'unique_area_covered[m^2]': N_blob * [0.], 
                  'area_covered[m^2]': N_blob * [0.], 
@@ -193,12 +185,10 @@ def blobSummary(videoarray, outpath, meterperpixel, secondperframe, favoured_dir
                 df_temp.loc[i, 'area_covered[m^2]'] = pixCount.sum() * meterperpixel**2
                 df_temp.loc[i, 'maxWavefrontArea[m^2]'] = pixCount.max() * meterperpixel**2
                 df_temp.loc[i, 'minWavefrontArea[m^2]'] = pixCount.min() * meterperpixel**2
-                # TODO: -add to line below  (* secondperframe) to convert into seconds
-                #       -not done yet because whole blobsummary would need repetition and ipynb too
-                df_temp.loc[i, 'startTime[s]'] = np.min(frames_active)
+                df_temp.loc[i, 'startTime[s]'] = np.min(frames_active) * secondperframe
         print(vidID, ' computation finished for: duration[s], area_covered[m^2], maxWavefrontArea[m^2]')
-        # WaveSpeed analysis ############################## 
-        # computation of 'avgVelocity[m/s]', 'maxFrameVelocity[m/s]', 'minFrameVelocity[m/s]'
+        ###
+        # WaveSpeed analysis: 'avgVelocity[m/s]', 'maxFrameVelocity[m/s]', 'minFrameVelocity[m/s]'
         ###
         string_favoured_direction = ''
         if favoured_direction is not None:
@@ -207,12 +197,11 @@ def blobSummary(videoarray, outpath, meterperpixel, secondperframe, favoured_dir
         f_velocities = (outpath / 'velocity_data')
         f_velocities = list(f_velocities.glob('all_velocity_video*{}*{}.pickle'.format(vidID, string_favoured_direction)))[0]
         velodata = pickle.load(f_velocities.open('rb')) # velodata = [[velocities of blob0], [velocities of blob1], ....]
-        mean_blobs = [] # PPK:remove
         assert len(velodata) == len(df_temp), 'Nr_blob != Nr_veloBlobs'
         durations = df_temp['duration[s]'].get_values() / secondperframe
         durations = np.round(durations, 0).astype(int)
         for blobID, velos in enumerate(velodata):
-            # velos = [ [velocities between frame0 and frame1], [velocities between frame1 and frame2], ... ]
+            # velos = [ [velocities between frames: 0 and 1], [velocities between frames: 1 and 2], ... ]
             assert durations[blobID]-1==len(velos), (
                 'ERROR: {} != {} area_blob {} not identical with velo_blob'.format(
                     durations[blobID]-1, len(velos), blobID))

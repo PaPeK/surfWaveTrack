@@ -118,29 +118,26 @@ def createData(outpath, vidnumber, win_size=14, delta_thresh=2.6, fps=60,
 ######################################################################################################
 # get Data from video
 ######################################################################################################
-def ProcessFiles(mask_vidfiles, outpath, pool, no_frames=5000, cutframe=2000, BlobThresholdArea=None):
-    maskpartial = partial(maskData, no_frames=no_frames, cutframe=cutframe,
-                          outpath=outpath, BlobThresholdArea=BlobThresholdArea)
-    pool.map(maskpartial, mask_vidfiles)
 
 
-def maskData (vidfile, no_frames, cutframe, outpath, BlobThresholdArea=None):
+def createDataBlob3d (vidfile, no_frames, cutframe, outpath, BlobThresholdArea=None):
     outpath = Path(outpath)
     print('maskdata vidfile: ',vidfile)
-    vidname=vidfile.split('/')[-1]
-    vidname=vidname.replace('.mp4','')
-    #print(vidfile)
-    [activity, avg_activity, cntsizes,
-     blob3d] = apw.RunSingleVideo(vidfile, no_frames=no_frames,
-                                  cutframe=cutframe,
-                                  BlobThresholdArea=BlobThresholdArea)
+    blob3d = apw.bwVideo2blob3d(vidfile, no_frames=no_frames,
+                                cutframe=cutframe,
+                                BlobThresholdArea=BlobThresholdArea)
     print('saving mask_sub_Data')
+    vidname = vidfile.split('/')[-1]
+    vidname = vidname.replace('.mp4', '')
     outname = vidname.replace('mask_','blob3d_')
-    np.save(str(outpath /outname), blob3d)
+    np.save(str(outpath / outname), blob3d)
+
 
 def getData(outpath, vidnumber, win_size,dthresh, pool,
             cutframe=0, no_frames=10000, BlobThresholdArea=None):
-    ''' creates collection of mask_vidfiles and extracts information
+    '''
+    filters and transfroms mask_vidfiles to numpy-arrays
+    INPUT:
         vidnumber = array with video numbers
         cutframe defines where to start
         no_frames = max. frames
@@ -161,9 +158,9 @@ def getData(outpath, vidnumber, win_size,dthresh, pool,
     d_blob3d = outpath / 'blob3d_data'
     d_blob3d.mkdir(exist_ok=True)
     print('Videos to process: ' + str(len(mask_vidfiles)))
-    ProcessFiles(mask_vidfiles=mask_vidfiles, outpath=str(d_blob3d),
-                 cutframe=cutframe, no_frames=no_frames, pool=pool,
-                 BlobThresholdArea=BlobThresholdArea)
+    createDataBlob3d_part = partial(createDataBlob3d, no_frames=no_frames, cutframe=cutframe,
+                                    outpath=str(d_blob3d), BlobThresholdArea=BlobThresholdArea)
+    pool.map(createDataBlob3d_part, mask_vidfiles)
 
 ######################################################################################################
 # blobs
@@ -253,20 +250,21 @@ def labelSplitAndMerge(data, size=None, background=None):
     return labelAll
 
 
-def labelBlob (outpath, vidID, start_frame=0, end_frame=None):
-    ''' labels filteredActivity data
-        negative start_frame = last x frames
+def labelBlob (outpath, vidID, start_frame=0, end_frame=None, splitSize=None):
     '''
+    loads filtered activity array (0=active, 255=background) and detects blobs
+    does exactly the same as skimage.measure.label but for much larger data
+    '''
+    if splitSize is None:
+        splitSize = 100
     outpath = Path(outpath)
     print('loading filteredActivity')
     # filteredActivity contains only 255 and 0 entries (255=background, 0=activity)
     p_filteredActivity = list((outpath / 'blob3d_data').glob('blob3d_*{}*npy'.format(vidID)))[0]
-    # PPK: delete below
-    # p_filteredActivity = outpath / 'blob3d_data/blob3d_{}.npy'.format(data)
     filteredActivity = np.load(str(p_filteredActivity))
     print('Done loading')
     labels = labelSplitAndMerge(data=(255-filteredActivity[start_frame:end_frame]),
-                                size=100, background=0)
+                                size=splitSize, background=0)
     print('measured')
     with h5py.File(str(outpath / 'label_{}.hdf5'.format(vidID)), 'w') as labelfile:
         dset = labelfile.create_dataset('labels', data=labels, chunks=True,
@@ -283,23 +281,20 @@ def regionpropBlob (outpath, vidID):
     f_labelH5 = list(outpath.glob('label_*{}*.hdf5'.format(vidID)))[0]
     with h5py.File(str(f_labelH5), 'r') as labelfile:
         all_labelprops = measure.regionprops(labelfile.get('labels'))
-    d_blobRegion = outpath / 'temp_regionprop_blob/'
-    d_blobRegion.mkdir(exist_ok=True)
     # save_labels
-    all_labelid = []
-    for props in all_labelprops:
-        all_labelid.append(props.label)
-    all_labelid = np.array(all_labelid, dtype=int)
-    with h5py.File( str(d_blobRegion / 'BlobLabels_video_{}.hdf5'.format(vidID)) , 'w') as h5f:
-        dset = h5f.create_dataset('labels', data=all_labelid, chunks=True,
-                                  compression='gzip', compression_opts=9)
+    d_blobRegion = outpath / 'blob_details/'
+    d_blobRegion.mkdir(exist_ok=True)
     print('saving single blob coordinates')
-    print('blob_props to save: ', len(all_labelid))
-    with h5py.File( str(d_blobRegion / 'Blobcoords_video_{}.hdf5'.format(vidID)) , 'w') as h5f:
-        for blob, labelprops in enumerate(all_labelprops):
+    print('blob_props to save: ', len(all_labelprops))
+    with h5py.File( str(d_blobRegion / 'BlobCoords_{}.hdf5'.format(vidID)) , 'w') as h5f:
+        all_labels = np.empty(len(all_labelprops), dtype=int)
+        for blob, props in enumerate(all_labelprops):
             if(blob %1000 == 0):
                 print('currently at blob ', blob, end='\r')
-            dset = h5f.create_dataset('Blob_{}'.format(blob),
+            dset = h5f.create_dataset('Blob_{}'.format(props.label),
                                       data=labelprops.coords,
                                       chunks=True, compression='gzip',
                                       compression_opts=9)
+            all_labels[blob] = props.label
+        dset = h5f.create_dataset('labelList', data=all_labels, chunks=True,
+                                  compression='gzip', compression_opts=9)
