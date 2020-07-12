@@ -1,4 +1,5 @@
 import numpy as np
+import pdb
 import frontSpeedDetection as fsd
 import WaveInformations as wi
 from multiprocessing import Pool
@@ -11,6 +12,7 @@ import cv2
 import pandas as pd
 import re
 from pathlib import Path
+import psutil
 
 # NOTE
 # raw cropped videos and ImpactData need to be in the outpath folder
@@ -198,7 +200,7 @@ def blobSummary(videoarray, outpath, meterperpixel, secondperframe, favoured_dir
         f_velocities = list(f_velocities.glob('all_velocity_video*{}*{}.pickle'.format(vidID, string_favoured_direction)))[0]
         velodata = pickle.load(f_velocities.open('rb')) # velodata = [[velocities of blob0], [velocities of blob1], ....]
         assert len(velodata) == len(df_temp), 'Nr_blob != Nr_veloBlobs'
-        durations = df_temp['duration[s]'].get_values() / secondperframe
+        durations = df_temp['duration[s]'].values / secondperframe
         durations = np.round(durations, 0).astype(int)
         for blobID, velos in enumerate(velodata):
             # velos = [ [velocities between frames: 0 and 1], [velocities between frames: 1 and 2], ... ]
@@ -208,12 +210,12 @@ def blobSummary(videoarray, outpath, meterperpixel, secondperframe, favoured_dir
             vel_frame = np.empty(len(velos), dtype=float)
             weights = vel_frame.copy()
             for i, vels in enumerate(velos): # vels = all velocities between 2 frames
-                vel_frame[i] = np.nanmean(vels)
+                # vel_frame[i] = np.nanmean(vels)
+                vel_frame[i] = np.mean(vels)
                 weights[i] = len(vels)
                 if np.isnan(vel_frame[i]):
                     vel_frame[i] = 0 # not growing wave = empty list if NoZeroVelocity == True 
                     weights[i] = 1 # smallest weight as possible
-            # TODO: rethink if really weighted average should be used
             unitConversion = meterperpixel / secondperframe
             if weights.sum() > 0 and len(velos) > 0:
                 avg_vel = np.average(vel_frame, weights=weights)
@@ -245,6 +247,7 @@ if __name__ == '__main__':
     # FILTERING FLOATING DIRT:
     BlobThresholdArea = 400 # defines the area necessary for a blob in a frame to be considered as part of the 3dBlob
     outpath = Path.cwd().parent / 'data'
+    cores = int(psutil.cpu_count() / 2) # if you run into memory problems -> set lower
 
     Input=pd.read_csv(str(outpath / 'Input.csv'))
     video=np.array(Input['identifier'])
@@ -264,7 +267,7 @@ if __name__ == '__main__':
     start_frame=0 #if set to None then video only since impact is analyzed
     ######################
 
-    main(str(outpath), video, win_size=win_size, dthresh=dthresh, cores=35,
+    main(str(outpath), video, win_size=win_size, dthresh=dthresh, cores=cores,
          scalefactor=scalefactor, fps=fps, animate=animate,
          dicFlags=dicFlags, start_frame=start_frame,
          BlobThresholdArea=BlobThresholdArea,

@@ -37,12 +37,12 @@ def createData(outpath, vidnumber, win_size=14, delta_thresh=2.6, fps=60,
     '''
     outpath = Path(outpath)
     print('vidnumber', vidnumber)
-    vidframerate= fps
+    vidframerate = fps
     #############################################
-    resizefactor=1.0
-    cutrows=[0,None]
-    cutcolumns=[None,None]
-    frameout=False
+    resizefactor = 1.0
+    cutrows = [0, None]
+    cutcolumns = [None, None]
+    frameout = False
 
     # finds the path of the file
     inputfile = pd.read_csv(str(outpath / 'Input.csv'))
@@ -280,7 +280,7 @@ def regionpropBlob (outpath, vidID):
     outpath = Path(outpath)
     f_labelH5 = list(outpath.glob('label_*{}*.hdf5'.format(vidID)))[0]
     with h5py.File(str(f_labelH5), 'r') as labelfile:
-        all_labelprops = measure.regionprops(labelfile.get('labels'))
+        all_labelprops = measure.regionprops(np.array(labelfile.get('labels')))
     # save_labels
     d_blobRegion = outpath / 'blob_details/'
     d_blobRegion.mkdir(exist_ok=True)

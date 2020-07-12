@@ -26,6 +26,10 @@ def GetFrontSpeed(outpath, blobCoords, pool,
                        blobCoords, NoZeroVelocity=NoZeroVelocity,
                        favoured_direction=favoured_direction)
     all_velocity = pool.map(velopart, times_unique)
+    # BELOW for debugging
+    # all_velocity = []
+    # for times in times_unique:
+    #     all_velocity.append(velopart(times))
     
     return all_velocity
 
@@ -38,54 +42,27 @@ def velocalc(outpath,
     '''
     if NoZeroVelocity is None:
         NoZeroVelocity = True
-    wfront1 = []
-    for i in range(0,len(blobCoords)):
-        if (blobCoords[i][0] == t):
-            wfront1.append([blobCoords[i][1], blobCoords[i][2]])
-    
-    # blob in second time frame
-    wfront2 = []
-    for i in range(0,len(blobCoords)):
-        if (blobCoords[i][0] == t+1):
-            wfront2.append([blobCoords[i][1], blobCoords[i][2]])
-    
-    wfront1 = np.array(wfront1)
-    wfront2 = np.array(wfront2)
+    contours1 = getWaveContours(blobCoords, t)
+    contours2 = getWaveContours(blobCoords, t+1)
 
-    blob1 = np.zeros(wfront1.max(axis=0)+1, dtype=np.uint8)
-    blob1[list(wfront1.T)] = 200 # NEEDS TO BE UPDATED SEE WARNINIGS: use `arr[tuple(seq)]` instead of `arr[seq]` 
-    blob2 = np.zeros(wfront2.max(axis=0)+1, dtype=np.uint8)
-    blob2[list(wfront2.T)] = 200 # NEEDS TO BE UPDATED SEE WARNINIGS: use `arr[tuple(seq)]` instead of `arr[seq]`
-
-    cont, hier = cv2.findContours(blob1, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # cv2.RETR_TREE
-    wfront1 = []
-    for con in cont:
-        wfront1.append(con.reshape(-1,2).T[::-1])
-
-
-    cont, hier = cv2.findContours(blob2, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # cv2.RETR_TREE
-    wfront2= []
-    for con in cont:
-        wfront2.append(con.reshape(-1,2).T[::-1])
-
-
-    w2_end = np.zeros((0,2))
+    # only consider positive wave-veloxities (e.g. contours outside the precendent contours)
+    w2_end = np.zeros((0, 2))
     len_zeroSpeed = 0
-    for w2 in wfront2:
+    for w2 in contours2:
         combi = np.zeros(len(w2.T), dtype=bool)
         points_check = w2.T
-        for w1 in wfront1:
+        for w1 in contours1:
             on_poly = points_on_poly(points_check, w1.T)
             inside = measure.points_in_poly(np.array(points_check), w1.T)
             combi += on_poly + inside
             len_zeroSpeed += len(on_poly)
-        w2_end = np.concatenate((w2_end, points_check[~combi]), axis = 0)
+        w2_end = np.concatenate((w2_end, points_check[~combi]), axis=0)
     if NoZeroVelocity:
         len_zeroSpeed = 0
 
-
+    # compare the outside-contours (w2_end) with all precedent contours
     w1 = np.zeros((0, 2))
-    for w in wfront1:
+    for w in contours1:
         w1 = np.concatenate((w1, w.T))
     
     # get velocity
@@ -100,6 +77,30 @@ def velocalc(outpath,
         all_velocity = []
     
     return all_velocity
+
+
+def getWaveContours(blobCoords, t):
+    '''
+    computes the contours of the wave at time t by:
+        1. find at which positions the wave is at time t
+        2. create a rudimentary image from the positions
+            which can be processed by cv2
+        3. compute contours of the image and return the reshaped version
+    INPUT:
+        blobCoords shape=[Ncoords, 3]
+            times and positions of the entire wave,
+            e.g. [[0, 300, 223], [0, 301, 223], ...[time, x, y]]
+        t int
+            time at from which the contour is needed
+    '''
+    thereTime = np.where(blobCoords[:, 0] == t)[0]
+    wfront = blobCoords[thereTime, 1:]
+    blob = np.zeros(wfront.max(axis=0)+1, dtype=np.uint8)
+    blob[tuple(wfront.T)] = 200
+    cont, hier = cv2.findContours(blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) # cv2.RETR_TREE
+    waveContours = [con.reshape(-1, 2).T[::-1] for con in cont]
+    return waveContours
+
 
 def minimize_dist(pos1,pos2):
     ''' Helper function for fiding closest point on the second line (pos2) to determine normal displacement.
