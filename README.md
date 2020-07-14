@@ -37,18 +37,16 @@ It is the average over all spatial front positions and all frames.
 
 ## Required python packages:
 
-The code runs with a python setup specified in `requirements.txt` (created via `pip3 freeze > requirements.txt`). 
-However most packages are not needed and we will provide a minimal Docker version in the near future.
-
-The most important packages (with the a working version):
-
-* opencv-python==4.0.0.21
-* pickleshare==0.7.4
-* h5py==2.7.1
-* matplotlib==2.2.2
-* pandas==0.23.1
-* scipy==1.4.1
-* sk-video==1.1.10
+The code runs in the anaconda environment specified in `environment.yml` which can be created from the projects root directory via
+```shell
+conda env create -f environment.yml
+```
+which creates the environment `surfWave` (name specified in `environment.yml`) which you activate by
+```shell
+conda activate surfWave
+```
+As alternative we documented from this environment the python packages in use in `requirements.txt` (created via `pip freeze > requirements.txt`). 
+In case you want to update your python packages to enable the code to run the most important packages and their versions are listed in `environment.yml`.
 
 ### Docker alternative
 

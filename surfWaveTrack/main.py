@@ -6,6 +6,8 @@ from multiprocessing import Pool
 import os
 from functools import partial
 import pickle
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import h5py
 import cv2
